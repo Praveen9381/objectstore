@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:os="http://www.mulesoft.org/schema/mule/os"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="295a00e1-de06-4a27-b6c5-1514192a52bf" >
+		<http:listener-connection host="0.0.0.0" port="8081" />
+	</http:listener-config>
+	<os:object-store name="Object_store" doc:name="Object store" doc:id="ecfe419b-8174-4ba6-b43a-3f4cf0371557" entryTtl="1" expirationInterval="0" />
+	<http:request-config name="HTTP_Request_configuration" doc:name="HTTP Request configuration" doc:id="afaf8b29-d789-4f90-bfc8-8d443b079400" >
+		<http:request-connection host="localhost" port="8082" />
+	</http:request-config>
+	<flow name="objectstoreFlow" doc:id="cc46630a-f0f2-443b-a27e-d138fe59b084" >
+		<http:listener doc:name="Listener" doc:id="cf590e5b-c0ee-410f-8bfa-3944c48f7274" config-ref="HTTP_Listener_config" path="/object"/>
+		<os:contains doc:id="f1dc81ce-6785-483c-b95e-63357ae2c7da" doc:name="" key="access-token" objectStore="Object_store"/>
+		<choice doc:name="Choice" doc:id="3bb3be1f-81a1-47ef-90d3-24faba7387d2" >
+			<when expression="#[payload == true]">
+				<os:retrieve doc:name="Retrieve" doc:id="c1bcf7e2-388d-458a-9d24-dc3f2f701df0" key="access-token" objectStore="Object_store">
+					<os:default-value ><![CDATA[#[payload]]]></os:default-value>
+				</os:retrieve>
+				<choice doc:name="Choice" doc:id="c76c4b4d-472e-4add-8e3e-7a71e1be0b2e" >
+					<when expression="#[((now () - payload.created_At) as Number) &lt; payload.expiry_interval]">
+						<ee:transform doc:name="Transform Message" doc:id="1db730d4-7da4-4198-b0a8-4a376b254d41" >
+							<ee:message >
+								<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"final_token":payload.token,
+	"action":"reusing valid token"
+}]]></ee:set-payload>
+							</ee:message>
+						</ee:transform>
+					</when>
+					<otherwise >
+						<http:request method="GET" doc:name="mule-auth-genRequest" doc:id="b459fa72-4129-4090-bcd0-764f7f970068" config-ref="HTTP_Request_configuration" path="/token"/>
+						<set-payload value="#[payload ++ {created_At : now()}]" doc:name="Set Payload" doc:id="d5b5a50d-75bb-4679-83c8-6fbc20c3c51e" />
+						<os:store doc:name="Store" doc:id="8f1b0345-01a4-49e3-a3d9-7018ff6d264d" key="access-token" objectStore="Object_store"/>
+						<ee:transform doc:name="Transform Message" doc:id="38fc60ba-9026-4511-86ff-246b89caa9ae" >
+							<ee:message >
+								<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"final_token":payload.token,
+	"action":"Generating a new token"
+}]]></ee:set-payload>
+							</ee:message>
+						</ee:transform>
+					</otherwise>
+				</choice>
+			</when>
+			<otherwise>
+				<http:request method="GET" doc:name="mule-auth-genRequest" doc:id="ebeb55b6-83a9-4254-8081-10c18b683b80" config-ref="HTTP_Request_configuration" path="/token" />
+				<set-payload value="#[payload ++ {created_At:now()}]" doc:name="Set Payload" doc:id="b99b2b03-9dd7-4a3b-97a4-3117bca23255" />
+				<os:store doc:name="Store" doc:id="8f1eefcb-4e6c-48b1-ab62-7768209e6443" key="access-token" objectStore="Object_store" />
+				<ee:transform doc:name="Transform Message" doc:id="1605e855-619c-4a8b-a4a0-18ddb4f9948b" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"final_token":payload.token,
+	"action":"Generating a new token absence of token"
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</otherwise>
+		</choice>
+	</flow>
+</mule>
